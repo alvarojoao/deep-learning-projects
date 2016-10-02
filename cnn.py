@@ -104,28 +104,37 @@ class ConvolutionalNetwork(object):
         tr_feed = {self.x: batch_x, self.keep_prob:1}
         return self.sess.run(self.encode,tr_feed)
     
-    def saveWeights(self,model_path):
-        self.tf_saver.save(self.sess, model_path)
-        return None
+    #def saveWeights(self,model_path):
+    #    self.tf_saver.save(self.sess, model_path)
+    #    return None
 
-    def restoreWeights(self,model_path):
-        self.tf_merged_summaries = tf.merge_all_summaries()
-        self.tf_saver.restore(self.tf_session, self.model_path)
-        return None
+    #def restoreWeights(self,model_path):
+    #    self.tf_merged_summaries = tf.merge_all_summaries()
+    #    self.tf_saver.restore(self.tf_session, self.model_path)
+    #    return None
     
     def load_weights(self, path):
-        dict_w = self.get_dict_layer_names() 
-        saver = tf.train.Saver(dict_w)
+        saver = tf.train.Saver(self.dict_names)
         saver.restore(self.sess, path)
 
     def save_weights(self, path):
-        dict_w = self.get_dict_layer_names()
-        saver = tf.train.Saver(dict_w)
+        saver = tf.train.Saver(self.dict_names)
         save_path = saver.save(self.sess, path)
-    def get_dict_layer_names(self):
-        a = self.layers.split(',')
-        self.W_vars = []
-        self.B_vars = []
+        
+    
+    def genCheckName(self,name_):
+        contains = name_ in self.dict_names
+        if contains:
+            i = 1
+            while(True):
+                name_=name_+str(i)
+                contains = name_ in self.dict_names
+                if not contains:
+                    return name_
+                i=i+1
+        else:
+            return name_
+            
         
     def _create_layers(self, n_classes):
         """Create the layers of the model from self.layers.
@@ -140,7 +149,7 @@ class ConvolutionalNetwork(object):
         prev_output_dim = self.original_shape[2]
         # this flags indicates whether we are building the first dense layer
         first_full = True
-
+        self.dict_names = {}
         self.W_vars = []
         self.B_vars = []
 
@@ -165,11 +174,17 @@ class ConvolutionalNetwork(object):
                       (prev_output_dim, feature_maps, fx, fy, stride))
 
                 # Create weights and biases
+                namew = self.genCheckName(l+'w')
+                nameb = self.genCheckName(l+'b')
                 W_conv = self.weight_variable(
-                    [fx, fy, prev_output_dim, feature_maps])
-                b_conv = self.bias_variable([feature_maps])
+                    [fx, fy, prev_output_dim, feature_maps],namew)
+                b_conv = self.bias_variable([feature_maps],nameb)
                 self.W_vars.append(W_conv)
                 self.B_vars.append(b_conv)
+                
+                self.dict_names[namew] =  W_conv
+                self.dict_names[nameb] = b_conv
+
 
                 # Convolution and Activation function
                 h_conv = tf.nn.relu(
@@ -208,11 +223,16 @@ class ConvolutionalNetwork(object):
 
                     print('Building fully connected layer with %d in units\
                           and %d out units' % (fanin, dim))
-
-                    W_fc = self.weight_variable([fanin, dim])
-                    b_fc = self.bias_variable([dim])
+                    
+                    namew = self.genCheckName(l+'w')
+                    nameb = self.genCheckName(l+'b')
+                    W_fc = self.weight_variable([fanin, dim],namew)
+                    b_fc = self.bias_variable([dim],nameb)
                     self.W_vars.append(W_fc)
                     self.B_vars.append(b_fc)
+                    
+                    self.dict_names[namew] =  W_fc
+                    self.dict_names[nameb] = b_fc
 
                     h_pool_flat = tf.reshape(next_layer_feed, [-1, fanin])
                     h_fc = tf.nn.relu(tf.matmul(h_pool_flat, W_fc) + b_fc)
@@ -226,10 +246,17 @@ class ConvolutionalNetwork(object):
                 else:  # not first fully connected layer
 
                     dim = int(node[1])
-                    W_fc = self.weight_variable([prev_output_dim, dim])
-                    b_fc = self.bias_variable([dim])
+                    
+                    namew = self.genCheckName(l+'w')
+                    nameb = self.genCheckName(l+'b')
+                    W_fc = self.weight_variable([prev_output_dim, dim],namew)
+                    b_fc = self.bias_variable([dim],nameb)
                     self.W_vars.append(W_fc)
                     self.B_vars.append(b_fc)
+                    
+                    
+                    self.dict_names[namew] =  W_fc
+                    self.dict_names[nameb] = b_fc
 
                     h_fc = tf.nn.relu(tf.matmul(next_layer_feed, W_fc) + b_fc)
                     h_fc_drop = tf.nn.dropout(h_fc, self.keep_prob)
@@ -245,11 +272,17 @@ class ConvolutionalNetwork(object):
 
                 print('Building softmax layer with %d in units and\
                       %d out units' % (prev_output_dim, n_classes))
-
-                W_sm = self.weight_variable([prev_output_dim, n_classes])
-                b_sm = self.bias_variable([n_classes])
+                
+                namew = self.genCheckName(l+'w')
+                nameb = self.genCheckName(l+'b')
+                W_sm = self.weight_variable([prev_output_dim, n_classes],namew)
+                b_sm = self.bias_variable([n_classes],nameb)
                 self.W_vars.append(W_sm)
                 self.B_vars.append(b_sm)
+                
+                self.dict_names[namew] =  W_sm
+                self.dict_names[nameb] = b_sm
+                
                 self.encode = next_layer_feed
                 self.last_out = tf.matmul(next_layer_feed, W_sm) + b_sm
 
@@ -265,15 +298,21 @@ class ConvolutionalNetwork(object):
         return self.sess.run(self.cost, feed_dict=tr_feed)
 
     @staticmethod
-    def weight_variable(shape):
+    def weight_variable(shape,name_=None):
         """Create a weight variable."""
-        initial = tf.truncated_normal(shape=shape, stddev=0.1)
+        if name_ is not None:
+            initial = tf.truncated_normal(shape=shape, stddev=0.1,name=name_)
+        else:
+            initial = tf.truncated_normal(shape=shape, stddev=0.1)
         return tf.Variable(initial)
 
     @staticmethod
-    def bias_variable(shape):
+    def bias_variable(shape,name_=None):
         """Create a bias variable."""
-        initial = tf.constant(0.1, shape=shape)
+        if name_ is not None:
+            initial = tf.constant(0.1, shape=shape,name=name_)
+        else:
+            initial = tf.constant(0.1, shape=shape)
         return tf.Variable(initial)
 
     @staticmethod
