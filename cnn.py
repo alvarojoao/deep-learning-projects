@@ -291,7 +291,7 @@ class ConvolutionalNetwork(object):
         # 1. always use small ?mini-batches? of 10 to 100 cases.
         #    For big data with lot of classes use mini-batches of size about 10.
 
-        tr_feed = {self.x: batch_x, self.y: batch_y,self.keep_prob:1}
+        tr_feed = {self.x: batch_x, self.y: batch_y,self.keep_prob:self.keep_prob_value}
 
         self.sess.run(self.train_step, feed_dict=tr_feed)
 

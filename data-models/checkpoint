@@ -1,2 +1,2 @@
-model_checkpoint_path: "da-au9.chp"
-all_model_checkpoint_paths: "da-au9.chp"
+model_checkpoint_path: "mixDbn.chp"
+all_model_checkpoint_paths: "mixDbn.chp"
