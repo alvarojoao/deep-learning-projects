@@ -7,10 +7,10 @@ from utilsnn import xavier_init
 
 class DeepBeliefNN(object):
     def __init__(self, input_size,n_classes, layer_sizes, layer_names, finetune_learning_rate=0.001, momentum=0.5,keep_prob=1, 
-                 transfer_function=tf.nn.sigmoid,l2reg=5e-4,regtype='none',loss_func='softmax_cross_entropy',opt='gradient_descent'):
+                 transfer_function=tf.nn.sigmoid,l2reg=5e-4,regtype='none',loss_func='softmax_cross_entropy',opt='gradient_descent',dir_='dbn'):
 
         self.layer_names  = layer_names
-        self.keep_prob = tf.placeholder(tf.float32)
+        self.keep_prob = tf.placeholder(tf.float32,name='keep_prob-input')
         self.keep_prob_value = keep_prob
         self.l2reg = l2reg
         self.regtype = regtype
@@ -19,8 +19,8 @@ class DeepBeliefNN(object):
         self.momentum = momentum
         
         # Build the encoding layers
-        self.x = tf.placeholder("float", [None, input_size])
-        self.y = tf.placeholder("float", [None, n_classes])
+        self.x = tf.placeholder("float", [None, input_size],name='x-input')
+        self.y = tf.placeholder("float", [None, n_classes],name='y-input')
         self.finetune_learning_rate = finetune_learning_rate
         next_layer_input = self.x
 
@@ -84,27 +84,36 @@ class DeepBeliefNN(object):
             #mean_squared
             cost = tf.sqrt(tf.reduce_mean(tf.square(self.y - self.last_out)))
         
-        self.cost = (cost + regterm) if regterm is not None else (cost)
+        with tf.name_scope('Loss-target'):
+            self.cost = (cost + regterm) if regterm is not None else (cost)
         
-        
-        if self.opt == 'gradient_descent':
-            self.optimizer = tf.train.GradientDescentOptimizer(self.finetune_learning_rate).minimize(self.cost)
-        elif self.opt == 'ada_grad':
-            self.optimizer = tf.train.AdagradOptimizer(self.finetune_learning_rate).minimize(self.cost)
-        elif self.opt == 'momentum':
-            self.optimizer = tf.train.MomentumOptimizer(self.finetune_learning_rate, self.momentum).minimize(self.cost)
-        elif self.opt == 'adam':
-            self.optimizer = tf.train.AdamOptimizer(self.finetune_learning_rate).minimize(self.cost)
+        with tf.name_scope('OPT-target'):
+            if self.opt == 'gradient_descent':
+                self.optimizer = tf.train.GradientDescentOptimizer(self.finetune_learning_rate).minimize(self.cost)
+            elif self.opt == 'ada_grad':
+                self.optimizer = tf.train.AdagradOptimizer(self.finetune_learning_rate).minimize(self.cost)
+            elif self.opt == 'momentum':
+                self.optimizer = tf.train.MomentumOptimizer(self.finetune_learning_rate, self.momentum).minimize(self.cost)
+            elif self.opt == 'adam':
+                self.optimizer = tf.train.AdamOptimizer(self.finetune_learning_rate).minimize(self.cost)
     
         # initalize variables
         self.model_predictions = tf.argmax(self.last_out, 1)
         correct_prediction = tf.equal(self.model_predictions, tf.argmax(self.y, 1))
-        self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-        _ = tf.scalar_summary('accuracy', self.accuracy)
+        
+        
+        with tf.name_scope('Accuracy'):
+            self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
 
+        self.loss_sup_summary = tf.scalar_summary("loss-sup", self.cost)
+        self.accuracy_summary = tf.scalar_summary('accuracy', self.accuracy)
+        
         init = tf.initialize_all_variables()
         self.sess = tf.Session()
         self.sess.run(init)
+        
+        logs_path = './tf-logs/'+dir_
+        self.summary_writer = tf.train.SummaryWriter(logs_path, graph=tf.get_default_graph())
 
         
     def compute_regularization(self, vars):
@@ -181,6 +190,18 @@ class DeepBeliefNN(object):
                                    self.y: test_labels,
                                    self.keep_prob: 1},session=self.sess)
             
-    def partial_fit(self, X,y):
-        cost, opt = self.sess.run((self.cost, self.optimizer), feed_dict={self.x: X,self.y:y,self.keep_prob:self.keep_prob_value})
+    def partial_fit(self, batch_x,batch_y,valid_x,valid_y,epoch=0,i=0,batch_size=1000):
+        
+        tr_feed = {self.x: batch_x,self.y:batch_y,self.keep_prob:self.keep_prob_value}
+        cost, opt = self.sess.run((self.cost, self.optimizer), feed_dict=tr_feed)
+        
+        loss_sup_summary = self.sess.run(self.loss_sup_summary, feed_dict=tr_feed)
+        self.summary_writer.add_summary(loss_sup_summary, epoch * batch_size + i)
+        
+        tr_feed = {self.x: valid_x, self.y: valid_y,self.keep_prob:1}
+        accuracy_summary = self.sess.run(self.accuracy_summary, feed_dict=tr_feed)
+        self.summary_writer.add_summary(accuracy_summary, epoch * batch_size + i)
+        
+        
+        
         return cost
